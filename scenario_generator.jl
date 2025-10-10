@@ -29,3 +29,36 @@ function generate_scenarios(mu, sigma::Vector{Float64}, corr_matrix::Matrix{Floa
 
     return scenarios
 end
+
+function generate_spatiotemporal_scenarios(mu::Matrix{Float64},
+                                           sigma::Matrix{Float64},
+                                           corr_space::Matrix{Float64},
+                                           rho_time::Float64,
+                                           J::Int;
+                                           epsilon::Float64 = 1e-10,
+                                           seed::Int = 42)
+
+    rng = MersenneTwister(seed)
+    N, T = size(mu)
+
+    # Time correlation matrix (T×T)
+    corr_time = [rho_time^(abs(i-j)) for i in 1:T, j in 1:T]
+
+    # Combined covariance: space ⊗ time
+    Σ = kron(corr_time, corr_space)
+
+    # Standard deviations (flattened)
+    σ_vec = vec(sigma)
+    Σ = diagm(σ_vec) * Σ * diagm(σ_vec)
+    Σ = (Σ + Σ') / 2 + epsilon * I(N*T)
+
+    # Cholesky factor
+    L = cholesky(Σ).L
+
+    # Random draws
+    rnd = randn(rng, N*T, J)
+    scen = (vec(mu) .+ L * rnd)'
+
+    # Reshape to (J × N × T)
+    return reshape(scen, J, N, T)
+end

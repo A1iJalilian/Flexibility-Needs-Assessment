@@ -12,15 +12,17 @@ network = power_network("feeder 2")
 eng = network.eng
 data_math = transform_data_model(eng)
 
+#################################################################################
 # Study parameters
 V0 = 1                                      # Base voltage at the substation
 V0_min = 0.95                               # Minimum voltage
 V0_max = 1.05                               # Maximum voltage
 s_base = data_math["settings"]["sbase"]     # Base apparent power
 ρ = 4                                       # Number of sides in the polygonal approximation of the circle
-T = 24                                      # Number of time periods
-N_scen = 1000                                # Number of scenarios
-forecast_err = 0.2                          # Forecast error (as a fraction of the mean)
+T = 24                 # Number of time periods
+N_scen = 1000          # Number of scenarios
+forecast_err = 0.2     # Forecast error (fraction)
+rho_time = 0.8         # Temporal correlation coefficient
 
 # Sets
 R, X = compute_R_X(data_math)                                           # Compute R and X for all loads and buses
@@ -29,15 +31,25 @@ L = collect(keys(data_math["load"]))                                    # Set of
 P_max = Dict(l => rand([5]) ./ s_base for l in L)                         # Maximum power limits for loads
 Q_max = Dict(l => rand([2.0]) ./ s_base for l in L)                         # Maximum reactive power limits for loads
 
-# scenarios
-load_scenarios = Array{Float64}(undef, N_scen, length(L), T)
-for t in 1:T
-    mu = collect(network.load_profiles[t, :])                       # mean values at time t (vector of length N)
-    sigma = mu .* forecast_err                              # standard deviations
-    corr_matrix = fill(forecast_err, length(L), length(L)) + I(length(L)) * (1 - forecast_err)
-    load_scenarios[:, :, t] = generate_scenarios(mu, sigma, corr_matrix, N_scen)
-end
+#################################################################################
+# Generate load scenarios
+mu = Array{Float64}(undef, length(L), T)
+sigma = Array{Float64}(undef, length(L), T)
 
+for t in 1:T
+    mu[:, t] = collect(network.load_profiles[t, :])   # mean load at time t
+    sigma[:, t] = mu[:, t] .* forecast_err
+end
+corr_matrix = fill(forecast_err, length(L), length(L)) + I(length(L)) * (1 - forecast_err)
+
+# Generate all scenarios with temporal correlation
+load_scenarios = generate_spatiotemporal_scenarios(mu, sigma, corr_matrix, rho_time, N_scen)
+
+plot(1:T, load_scenarios[1:20, 1, :]', legend=false,
+     xlabel="Hour", ylabel="Load (kW)",
+     title="Sample Temporal Load Scenarios")
+#################################################################################
+# Optimization matrices
 # Calculating the constraints matrices
 A_v, B_v, C_v = Voltage_eq_mats(V0, V0_min, V0_max, L, R, X)
 A_l, B_l, C_l = compute_line_flow_constraints(L, L2load, data_math, ρ)
