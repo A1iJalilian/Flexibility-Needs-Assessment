@@ -1,4 +1,5 @@
 using PowerModelsDistribution
+using XLSX, DataFrames
 using Plots
 silence!()
 
@@ -7,14 +8,18 @@ struct power_network
     network_data_dir
     orig_eng
     eng
+    load_profiles
 
     function power_network(name::String)
         network_data_dir = joinpath(name, "feeder.dss")
         eng = parse_file(network_data_dir)
         reduced_eng = deepcopy(eng)
         reduce_size!(reduced_eng)
+        load_data_dir = joinpath(name, "Load_Profiles.xlsx")
+        sheet_name = "Sheet1"
+        load_profiles = XLSX.readtable(load_data_dir, sheet_name) |> DataFrame
 
-        return new(name, network_data_dir, eng, reduced_eng)
+        return new(name, network_data_dir, eng, reduced_eng, load_profiles)
     end
 end
 
