@@ -6,6 +6,7 @@ include("PowerNetworkData.jl")
 include("CalcNetParam.jl")
 include("OptMats.jl")
 include("Scenario_generator.jl")
+include("model.jl")
 
 # Load the distribution network model  
 network = power_network("feeder 2")
@@ -20,9 +21,11 @@ V0_max = 1.05                               # Maximum voltage
 s_base = data_math["settings"]["sbase"]     # Base apparent power
 ρ = 4                                       # Number of sides in the polygonal approximation of the circle
 T = 24                 # Number of time periods
-N_scen = 1000          # Number of scenarios
+N_scen = 100          # Number of scenarios
 forecast_err = 0.2     # Forecast error (fraction)
 rho_time = 0.8         # Temporal correlation coefficient
+pf_min, pf_max = 0.85, 0.95
+
 
 # Sets
 R, X = compute_R_X(data_math)                                           # Compute R and X for all loads and buses
@@ -42,12 +45,12 @@ for t in 1:T
 end
 corr_matrix = fill(forecast_err, length(L), length(L)) + I(length(L)) * (1 - forecast_err)
 
-# Generate all scenarios with temporal correlation
+# Generate all scenarios with temporal correlation (N_scen × L × T)
 load_scenarios = generate_spatiotemporal_scenarios(mu, sigma, corr_matrix, rho_time, N_scen)
 
-plot(1:T, load_scenarios[1:20, 1, :]', legend=false,
-     xlabel="Hour", ylabel="Load (kW)",
-     title="Sample Temporal Load Scenarios")
+# plot(1:T, load_scenarios[1:20, 1, :]', legend=false,
+#      xlabel="Hour", ylabel="Load (kW)",
+#      title="Sample Temporal Load Scenarios")
 #################################################################################
 # Optimization matrices
 # Calculating the constraints matrices
@@ -60,3 +63,29 @@ C = [C_v; C_l; C_c];
 AB_red, C = remove_redundant_constraints(hcat(A, B), C)
 A, B = AB_red[:, 1:length(L)], AB_red[:, length(L)+1:end]
 ;
+
+# --- Compute D matrix with random power factors ---
+γ_pf = rand(length(L)) .* (pf_max - pf_min) .+ pf_min
+γ = sqrt.(1 ./(γ_pf.^2) .- 1)
+Γ_t = [Diagonal(γ .* (1 .+ 0.02 .* randn(length(L)))) for t in 1:T]
+D_t = [A + B * Γ_t[t] for t in 1:T]
+
+
+λrD = fill(10.0, length(L))
+λrU = fill(8.0, length(L))
+Pmax_vec = [P_max[l] for l in L]
+Pmin_vec = -Pmax_vec
+Qmax_vec = [Q_max[l] for l in L]
+
+# Build hatP_fixed_t as a vector of (n×N) matrices
+hatP_fixed_t = [permutedims(load_scenarios[:, :, t]) for t in 1:T] ./ s_base
+# Each hatP_fixed_t[t] has dimensions n × N_scen
+
+# Solve the model
+include("model.jl")
+result = model_feasibility(A, B, C, D_t, hatP_fixed_t, Pmax_vec, Pmin_vec, Qmax_vec, λrD, λrU;
+               θ=0.2/s_base, ε=0.1, Δt=1.0, T=T, p_norm=2)
+
+plot(result[:P_plus]'.*s_base, xlabel="Time Period", ylabel="Power (kW)",
+     title="Optimal Load Adjustment Schedule", legend=false)
+
