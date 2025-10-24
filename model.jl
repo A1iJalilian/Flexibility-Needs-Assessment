@@ -1,36 +1,14 @@
 using JuMP, LinearAlgebra, SparseArrays
 using HiGHS, Gurobi
 
-"""
-    model_feasibility(A, B, C, D_t, hatP_fixed_t, Pmax, Pmin, Qmax, λrD, λrU;
-                      θ=0.1, ε=0.05, Δt=1.0, T=24, p_norm=2, solver=Gurobi.Optimizer)
 
-Build and solve the Distributionally Robust Feasibility Optimization model
-based on the CVaR reformulation, handling time-varying uncertainty samples.
-
-Inputs:
-- A, B, C: network constraint matrices/vectors.
-- D_t::Vector{Matrix}: list of D matrices, one per time step t=1:T.
-- hatP_fixed_t::Vector{Matrix}: list of (n×N) matrices of fixed-load samples for each t.
-- Pmax, Pmin, Qmax: component-wise bounds.
-- λrD, λrU: per-component cost coefficients.
-- θ: Wasserstein radius.
-- ε: violation probability.
-- Δt: time-step duration.
-- T: number of time periods.
-- p_norm: ground metric (1, 2, or Inf).
-- solver: JuMP solver (default Gurobi).
-
-Returns:
-    Dict with optimal variables, objective value, and solver status.
-"""
 function model_feasibility(A, B, C, D_t,
-    hatP_fixed_t, Pmax, Pmin, Qmax, λrD, λrU;
+    hatξ_t, Pmax, Pmin, Qmax, λrD, λrU;
     θ=0.1, ε=0.05, Δt=1.0, T=24, p_norm=2,
     solver=Gurobi.Optimizer)
 
     M, n = size(A)
-    N = size(hatP_fixed_t[1], 2)
+    N = size(hatξ_t[1], 2)
     println("Building DR model with M=$M, n=$n, N=$N, T=$T, norm=$p_norm")
 
     # --- Helper: dual norm
@@ -53,7 +31,7 @@ function model_feasibility(A, B, C, D_t,
 
         Const_term_t = [Array{Float64}(undef, M, N) for t in 1:T]
         for t in 1:T, m in 1:M, i in 1:N
-            Const_term_t[t][m, i] = dot(D_rows_t[t][m], hatP_fixed_t[t][:, i]) + C[m]
+            Const_term_t[t][m, i] = dot(D_rows_t[t][m], hatξ_t[t][:, i]) + C[m]
         end
 
         # -----------------------------

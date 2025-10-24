@@ -9,6 +9,7 @@ struct power_network
     orig_eng
     eng
     load_profiles
+    pv_profile
 
     function power_network(name::String)
         network_data_dir = joinpath(name, "feeder.dss")
@@ -18,8 +19,10 @@ struct power_network
         load_data_dir = joinpath(name, "Load_Profiles.xlsx")
         sheet_name = "Sheet1"
         load_profiles = XLSX.readtable(load_data_dir, sheet_name) |> DataFrame
+        pv_data_dir = joinpath(name, "PV_Profiles.xlsx")
+        pv_profile = XLSX.readtable(pv_data_dir, sheet_name) |> DataFrame
 
-        return new(name, network_data_dir, eng, reduced_eng, load_profiles)
+        return new(name, network_data_dir, eng, reduced_eng, load_profiles, pv_profile)
     end
 end
 
