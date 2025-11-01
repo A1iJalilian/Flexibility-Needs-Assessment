@@ -76,24 +76,53 @@ function calculate_voltage_sensitivity(i, φ₁, j, φ₂, network_data)
     return R, X
 end
 
-function compute_R_X(data_math)
+function compute_R_X(data_math; three_phase::Bool=false, load::Bool=true)
     L = collect(keys(data_math["load"]))
-    R = Dict()  # To store the r_total values
-    X = Dict()  # To store the x_total values
+    R = Dict{Tuple{Int, Int, Any}, Float64}()
+    X = Dict{Tuple{Int, Int, Any}, Float64}()
 
-    for l1 in L
-        bus_l1 = data_math["load"][l1]["load_bus"]
-        φ₁ = data_math["load"][l1]["connections"][1]
-        for l2 in L
-            bus_l2 = data_math["load"][l2]["load_bus"]
-            φ₂ = data_math["load"][l2]["connections"][1]
-            # Calculate the total resistance and reactance between the two loads
-            b_int = bus_l1 isa String ? parse(Int, bus_l1) : bus_l1
-            r_total, x_total = calculate_voltage_sensitivity(b_int, φ₁, bus_l2, φ₂, data_math)
+    # --- Step 1: Determine which bus-phase points we need sensitivities for ---
+    monitored_points = []
 
-            # Store the results in dictionaries
-            R[(b_int, φ₁, l2)] = r_total
-            X[(b_int, φ₁, l2)] = x_total
+    # Always include all load connection points
+    if load
+        for l in L
+            bus_l = data_math["load"][l]["load_bus"]
+            φ = data_math["load"][l]["connections"][1]
+            b_int = bus_l isa String ? parse(Int, bus_l) : bus_l
+            push!(monitored_points, (b_int, φ))
+        end
+    end
+
+    # If unbalance analysis required, include all three-phase buses
+    if three_phase
+        for (bus_id, bus_data) in data_math["bus"]
+            terminals = bus_data["terminals"]
+            if length(terminals) == 3
+                b_int = bus_id isa String ? parse(Int, bus_id) : bus_id
+                for φ in terminals
+                    if (b_int, φ) ∉ monitored_points
+                        push!(monitored_points, (b_int, φ))
+                    end
+                end
+            end
+        end
+    end
+
+    monitored_points = unique(monitored_points)
+
+    # --- Step 2: Compute sensitivities for all monitored points ---
+    for (b, φ) in monitored_points
+        for l in L
+            bus_l = data_math["load"][l]["load_bus"]
+            φ_l = data_math["load"][l]["connections"][1]
+            b_l = bus_l isa String ? parse(Int, bus_l) : bus_l
+
+            # Compute sensitivity between (b, φ) and load (b_l, φ_l)
+            r_total, x_total = calculate_voltage_sensitivity(b, φ, b_l, φ_l, data_math)
+
+            R[(b, φ, l)] = r_total
+            X[(b, φ, l)] = x_total
         end
     end
 
