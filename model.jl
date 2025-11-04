@@ -2,8 +2,8 @@ using JuMP, LinearAlgebra, SparseArrays
 using HiGHS, Gurobi
 
 
-function model_feasibility(A, B, C, D_t,
-    hatξ_t, Pmax, Pmin, Qmax, λrD, λrU;
+function model_CVaR(A, B, C, D_t, flex_constraints,
+    hatξ_t, Pmax, Pmin, Qmax, λrD, λrU, cδψ;
     θ=0.1, ε=0.05, Δt=1.0, T=24, p_norm=2,
     solver=Gurobi.Optimizer)
 
@@ -46,6 +46,7 @@ function model_feasibility(A, B, C, D_t,
         @variable(model, Q[1:n, 1:T])
         @variable(model, τ[1:T])
         @variable(model, s[1:N, 1:T] >= 0)
+        @variable(model, δψ[1:M, 1:T] >= 0)   # Voltage unbalance violation
 
         # Bounds
         for t in 1:T
@@ -69,7 +70,7 @@ function model_feasibility(A, B, C, D_t,
                         warn("Denominator in CVaR constraint is zero for t=$t, m=$m.")
                     end
                     @constraint(model,
-                        (const_term -
+                        (const_term + δψ[m, t]*flex_constraints[m] -
                          dot(view(A, m, :), P_plus[:, t] + P_minus[:, t]) -
                          dot(view(B, m, :), Q[:, t])) / denom
                         >= τ[t] - s[i, t])
@@ -84,7 +85,9 @@ function model_feasibility(A, B, C, D_t,
         g_cost = sum(λrD[j] * total_Pplus[j] for j=1:n) * Δt -
                  sum(λrU[j] * total_Pminus[j] for j=1:n) * Δt
 
-        @objective(model, Min, g_cost)
+        f_cost = cδψ * sum(δψ[m, t] for m=1:M, t=1:T)
+
+        @objective(model, Min, g_cost + f_cost)
     end
     println("Model built in $(round(build_time, digits=2)) seconds.")
 

@@ -17,21 +17,22 @@ data_math = transform_data_model(eng)
 # Study parameters
 Base.@kwdef struct SimulationSettings
     V0::Float64 = 1.0                     # Base voltage at the substation
-    V0_min::Float64 = 0.95                # Minimum voltage
-    V0_max::Float64 = 1.05                # Maximum voltage
+    V0_min::Float64 = 0.9                 # Minimum voltage
+    V0_max::Float64 = 1.1                 # Maximum voltage
     ρ::Int = 4                            # Number of sides in the polygonal approximation of the circle
     T::Int = 24                           # Number of time periods
-    t0::Int = 100                         # Starting time period
-    N_scen::Int = 100                     # Number of scenarios
+    t0::Int = 3000                        # Starting time period
+    N_scen::Int = 50                      # Number of scenarios
     forecast_err::Float64 = 0.3           # Forecast error (fraction)
     forecast_err_pv::Float64 = 0.2        # PV forecast error (fraction)
     rho_time::Float64 = 0.8               # Temporal correlation coefficient
     pf_min::Float64 = 0.85                # Minimum power factor
     pf_max::Float64 = 0.95                # Maximum power factor
-    ψ::Float64 = 0.05                     # Voltage unbalance co-cost limit
+    ψ::Float64 = 0.05                     # Voltage unbalance limit
+    cδψ::Float64 = 500.0                  # Voltage unbalance violation cost
     P_max::Vector{Float64} = [5.0]        # Maximum active power limits for loads (per unit)
     Q_max::Vector{Float64} = [2.0]        # Maximum reactive power limits for loads (per unit)
-    pv_c::Vector{Float64} = [3, 4, 5]     # PV capacities at each load (per unit)
+    pv_c::Vector{Float64} = [3, 5, 7]    # PV capacities at each load (per unit)
     λrD::Float64 = 10.0                   # Downward reserve price ($/kW)
     λrU::Float64 = 8.0                    # Upward reserve price ($/kW)
 end
@@ -60,9 +61,20 @@ hatξ_t = [vcat(
         pv_scenarios[:, 1, t]'                 # (1 × N_scen)
     ) for t in 1:settings.T]
 
-# plot(1:T, load_scenarios[1:100, 5, :]', legend=false,
-#      xlabel="Hour", ylabel="Load (kW)",
-#      title="Sample Temporal Load Scenarios")
+n_loads = size(load_scenarios, 2)
+nrows = ceil(Int, n_loads / 6)
+
+plt = plot(layout = (nrows, 6), size=(1800, 250*nrows))
+
+for i in 1:n_loads
+    net_load = (load_scenarios[1:settings.N_scen, i, :]' .- pv_scenarios[1:settings.N_scen, 1, :]' .* pv_capacity[i]) .* s_base
+    plot!(plt[i], 1:settings.T, net_load,
+          legend=false, fontfamily="Times", fontsize=10,
+          xlabel="Hour", ylabel="Load (kW)",
+          title="Load #$i")
+end
+
+display(plt)
 
 #################################################################################
 # Optimization matrices
@@ -70,11 +82,29 @@ A , B, C, D_t_ext, flex_constraints = calculateABCD(data_math, settings, P_max, 
 
 # Solve the model
 include("model.jl")
-result = model_feasibility(A, B, C, D_t_ext, hatξ_t, Pmax_vec, Pmin_vec, Qmax_vec, λrD, λrU;
-    θ=0.1 / s_base, ε=0.1, Δt=1.0, T=T, p_norm=2)
+result = model_CVaR(A, B, C, D_t_ext, flex_constraints, hatξ_t, Pmax_vec, Pmin_vec, Qmax_vec, λrD, λrU, settings.cδψ;
+    θ=0.05 / s_base, ε=0.1, Δt=1.0, T=settings.T, p_norm=2)
 
-plot(result[:P_plus]' .* s_base, xlabel="Time Period", ylabel="Power (kW)",
-    title="Optimal Upward Flexibility Schedule", legend=false)
+n_loads = size(result[:P_plus], 1)
+T = size(result[:P_plus], 2)
+nrows = ceil(Int, n_loads / 6)
 
-plot(result[:P_minus]' .* s_base, xlabel="Time Period", ylabel="Power (kW)",
-    title="Optimal Downward Flexibility Schedule", legend=false)
+plt = plot(layout = (nrows, 6), size=(1800, 250*nrows))
+
+for i in 1:n_loads
+    # Extract data for load i
+    p_plus = result[:P_plus][i, :] .* s_base
+    p_minus = result[:P_minus][i, :] .* s_base
+
+    # Plot both upward & downward flexibility
+    plot!(plt[i], 1:T, p_plus, label="Upward", color=:blue)
+    plot!(plt[i], 1:T, p_minus, label="Downward", color=:red)
+
+    plot!(plt[i],
+        xlabel="Time Period",
+        ylabel="Power (kW)",
+        title="Load #$i Flexibility"
+    )
+end
+
+display(plt)

@@ -63,10 +63,9 @@ function generate_spatiotemporal_scenarios(mu::Matrix{Float64},
     return reshape(scen, J, N, T)
 end
 
-function gen_scenarios(profile, settings;
-                       normalize_by=nothing, is_pv::Bool=false)
+function gen_scenarios(profile, settings; normalize_by=nothing, is_pv::Bool=false)
 
-    # Extract parameters from settings
+    # Extract parameters
     T = settings.T
     t0 = settings.t0
     N_scen = settings.N_scen
@@ -75,13 +74,11 @@ function gen_scenarios(profile, settings;
 
     # --- Convert DataFrame to numeric matrix if needed ---
     prof_mat = profile isa DataFrame ? Matrix(profile) : profile
-
     n = size(prof_mat, 2)
 
     # --- Mean and standard deviation for each time step ---
     mu = Array{Float64}(undef, n, T)
     sigma = Array{Float64}(undef, n, T)
-
     for t in 1:T
         mu[:, t] = collect(prof_mat[t + t0 - 1, :])
         sigma[:, t] = mu[:, t] .* forecast_err
@@ -93,6 +90,15 @@ function gen_scenarios(profile, settings;
     # --- Generate spatio-temporal scenarios ---
     scenarios = generate_spatiotemporal_scenarios(mu, sigma, corr_matrix, rho_time, N_scen)
 
-    # --- Normalize if needed ---
-    return isnothing(normalize_by) ? scenarios : scenarios ./ normalize_by
+    # --- Post-processing ---
+    if !isnothing(normalize_by)
+        scenarios ./= normalize_by
+    end
+
+    # --- Clip PV scenarios to [0, 1] ---
+    if is_pv
+        @. scenarios = clamp(scenarios, 0.0, 1.0)
+    end
+
+    return scenarios
 end

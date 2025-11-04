@@ -308,7 +308,7 @@ function calculateABCD(data_math, settings, P_max, Q_max, pv_capacity)
     D_t = [A + B * Γ_t[t] for t in 1:T]
 
     # Compute the PV-related sensitivity column
-    d_pv_col = A * pv_capacity    # M×1
+    d_pv_col = -A * pv_capacity    # M×1
 
     # Extend D_t for all time steps
     D_t_ext = [hcat(D_t[t], d_pv_col) for t in 1:T]
