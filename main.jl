@@ -53,43 +53,47 @@ pv_capacity = rand(settings.pv_c, length(L)) .* rand([0, 1], length(L)) ./ s_bas
 #################################################################################
 # Generate load and PV scenarios
 load_scenarios = gen_scenarios(network.load_profiles, settings; normalize_by=s_base)
-pv_scenarios   = gen_scenarios(network.pv_profile, settings; is_pv=true)
+pv_scenarios = gen_scenarios(network.pv_profile, settings; is_pv=true)
 
 
 hatξ_t = [vcat(
-        permutedims(load_scenarios[:, :, t]),  # (n_loads × N_scen)
-        pv_scenarios[:, 1, t]'                 # (1 × N_scen)
-    ) for t in 1:settings.T]
+    1.5 .* permutedims(load_scenarios[:, :, t]),  # (n_loads × N_scen)
+    pv_scenarios[:, 1, t]'                 # (1 × N_scen)
+) for t in 1:settings.T]
 
 n_loads = size(load_scenarios, 2)
 nrows = ceil(Int, n_loads / 6)
 
-plt = plot(layout = (nrows, 6), size=(1800, 250*nrows))
+plt = plot(layout=(nrows, 6), size=(1800, 250 * nrows))
 
 for i in 1:n_loads
-    net_load = (load_scenarios[1:settings.N_scen, i, :]' .- pv_scenarios[1:settings.N_scen, 1, :]' .* pv_capacity[i]) .* s_base
+    net_load = (1.5 .* load_scenarios[1:settings.N_scen, i, :]' .- pv_scenarios[1:settings.N_scen, 1, :]' .* pv_capacity[i]) .* s_base
     plot!(plt[i], 1:settings.T, net_load,
-          legend=false, fontfamily="Times", fontsize=10,
-          xlabel="Hour", ylabel="Load (kW)",
-          title="Load #$i")
+        legend=false, fontfamily="Times", fontsize=10,
+        xlabel="Hour", ylabel="Load (kW)",
+        title="Load #$i")
 end
 
 display(plt)
 
 #################################################################################
 # Optimization matrices
-A , B, C, D_t_ext, flex_constraints = calculateABCD(data_math, settings, P_max, Q_max, pv_capacity)
+A, B, C, D_t_ext, flex_constraints = calculateABCD(data_math, settings, P_max, Q_max, pv_capacity)
 
 # Solve the model
 include("model.jl")
 result = model_CVaR(A, B, C, D_t_ext, flex_constraints, hatξ_t, Pmax_vec, Pmin_vec, Qmax_vec, λrD, λrU, settings.cδψ;
     θ=0.05 / s_base, ε=0.1, Δt=1.0, T=settings.T, p_norm=2)
 
+result = model_CVaR_CCG(A, B, C, D_t_ext, flex_constraints, hatξ_t, Pmax_vec, Pmin_vec, Qmax_vec, λrD, λrU, settings.cδψ;
+    θ=0.05 / s_base, ε=0.1, Δt=1.0, T=settings.T, p_norm=2, solver=Gurobi.Optimizer,
+    tol=1e-7, max_iters=50, initial_active=true, quiet=false)
+
 n_loads = size(result[:P_plus], 1)
 T = size(result[:P_plus], 2)
 nrows = ceil(Int, n_loads / 6)
 
-plt = plot(layout = (nrows, 6), size=(1800, 250*nrows))
+plt = plot(layout=(nrows, 6), size=(1800, 250 * nrows))
 
 for i in 1:n_loads
     # Extract data for load i
