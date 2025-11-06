@@ -83,11 +83,16 @@ A, B, C, D_t_ext, flex_constraints = calculateABCD(data_math, settings, P_max, Q
 # Solve the model
 include("model.jl")
 result = model_CVaR(A, B, C, D_t_ext, flex_constraints, hatξ_t, Pmax_vec, Pmin_vec, Qmax_vec, λrD, λrU, settings.cδψ;
-    θ=0.05 / s_base, ε=0.1, Δt=1.0, T=settings.T, p_norm=2)
+    θ=0.05 / s_base, ε=0.1, Δt=1.0, p_norm=2)
 
 result = model_CVaR_CCG(A, B, C, D_t_ext, flex_constraints, hatξ_t, Pmax_vec, Pmin_vec, Qmax_vec, λrD, λrU, settings.cδψ;
-    θ=0.05 / s_base, ε=0.1, Δt=1.0, T=settings.T, p_norm=2, solver=Gurobi.Optimizer,
-    tol=1e-7, max_iters=50, initial_active=true, quiet=false)
+    θ=0.05 / s_base, ε=0.1, Δt=1.0, p_norm=2, solver=Gurobi.Optimizer,
+    tol=1e-7, max_iters=50, initial_active=false, quiet=false)
+
+result = model_MILP_CCG(A, B, C, D_t_ext, flex_constraints, hatξ_t, Pmax_vec, Pmin_vec, Qmax_vec, λrD, λrU, settings.cδψ;
+    θ=0.05 / s_base, ε=0.1, Δt=1.0, p_norm=2, solver=Gurobi.Optimizer, 
+    tol=1e-7, max_iters=200, initial_active=false, quiet=false,
+    bigM=10e8, compute_bigM=false, bigM_factor=10.0)
 
 n_loads = size(result[:P_plus], 1)
 T = size(result[:P_plus], 2)
